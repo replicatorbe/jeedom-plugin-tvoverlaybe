@@ -1,0 +1,182 @@
+<div class="eqLogic eqLogic-widget allowResize #class# #category# tvoverlaybe-widget" data-eqType="#eqType#" data-eqLogic_id="#id#" data-eqLogic_uid="#uid#" data-version="#version#" data-translate-category="#translate_category#" data-category="#category#" data-tags="#tags#" data-tvo-ids="#tvo_ids#" data-tvo-state="#tvo_state#" style="width: #width#;height: #height#;#style#">
+  <div class="widget-name">
+    <span style="color:#background-color#" title="#alert_name#"><i class='#alert_icon#'></i></span>
+    <span class="cmd refresh pull-right cursor" data-cmd_id="#refresh_id#" title="{{Relire l'état}}"><i class="fas fa-sync"></i></span>
+    <span class="reportModeVisible">#name_display# <span class="object_name">#object_name#</span></span>
+    <a href="#eqLink#" class="reportModeHidden">#name_display# <span class="object_name">#object_name#</span></a>
+  </div>
+
+  <div class="tvo-body">
+    <div class="tvo-status">
+      <span class="tvo-pill" data-role="online"><i class="fas fa-circle"></i><span></span></span>
+      <span class="tvo-pill" data-role="screen"><i class="fas fa-tv"></i><span></span></span>
+    </div>
+
+    <form class="tvo-send" data-role="form" autocomplete="off">
+      <input type="text" class="form-control input-sm" data-role="title" placeholder="{{Titre}}" maxlength="120">
+      <textarea class="form-control input-sm" data-role="message" rows="2" placeholder="{{Message}}" maxlength="500"></textarea>
+      <button type="submit" class="btn btn-sm btn-success" data-role="send"><i class="fas fa-paper-plane"></i> {{Envoyer à la TV}}</button>
+    </form>
+
+    <div class="tvo-section" data-role="fixed-section">
+      <div class="tvo-label">
+        <span><i class="fas fa-thumbtack"></i> {{Indicateurs affichés}}</span>
+        <a class="cursor" data-role="clear" title="{{Retirer tous les indicateurs envoyés par Jeedom}}">{{tout retirer}}</a>
+      </div>
+      <div class="tvo-chips" data-role="chips"></div>
+    </div>
+
+    <div class="tvo-section">
+      <div class="tvo-toggles">
+        <button type="button" class="btn btn-xs" data-role="notif-toggle" title="{{Activer ou suspendre les notifications}}"><i class="fas fa-comment-alt"></i> {{Notifications}}</button>
+        <button type="button" class="btn btn-xs" data-role="fixed-toggle" title="{{Afficher ou masquer les indicateurs}}"><i class="fas fa-thumbtack"></i> {{Indicateurs}}</button>
+      </div>
+      <label class="tvo-range"><span>{{Horloge}}</span><input type="range" min="0" max="95" step="5" data-role="clock"><em data-role="clock-val"></em></label>
+      <label class="tvo-range"><span>{{Fond}}</span><input type="range" min="0" max="95" step="5" data-role="background"><em data-role="background-val"></em></label>
+    </div>
+  </div>
+
+  <style>
+    .tvoverlaybe-widget .tvo-body { padding: 4px 8px 8px; text-align: left; }
+    .tvoverlaybe-widget .tvo-status { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+    .tvoverlaybe-widget .tvo-pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 11px; background: rgba(127, 127, 127, .15); }
+    .tvoverlaybe-widget .tvo-pill.on { background: rgba(76, 175, 80, .18); color: #43a047; }
+    .tvoverlaybe-widget .tvo-pill.off { background: rgba(127, 127, 127, .15); opacity: .8; }
+    .tvoverlaybe-widget .tvo-pill .fa-circle { font-size: 7px; }
+    .tvoverlaybe-widget .tvo-send { display: flex; flex-direction: column; gap: 5px; margin: 0; }
+    .tvoverlaybe-widget .tvo-send textarea { resize: vertical; min-height: 44px; }
+    .tvoverlaybe-widget .tvo-send button { align-self: stretch; }
+    .tvoverlaybe-widget .tvo-section { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(127, 127, 127, .2); }
+    .tvoverlaybe-widget .tvo-label { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; opacity: .85; margin-bottom: 5px; }
+    .tvoverlaybe-widget .tvo-label a { font-size: 11px; }
+    .tvoverlaybe-widget .tvo-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .tvoverlaybe-widget .tvo-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 9px; border-radius: 999px; font-size: 11px; background: rgba(255, 152, 0, .18); }
+    .tvoverlaybe-widget .tvo-chip button { border: 0; background: transparent; color: inherit; padding: 0 4px; cursor: pointer; opacity: .7; }
+    .tvoverlaybe-widget .tvo-chip button:hover { opacity: 1; }
+    .tvoverlaybe-widget .tvo-empty { font-size: 11px; opacity: .6; font-style: italic; }
+    .tvoverlaybe-widget .tvo-toggles { display: flex; gap: 6px; margin-bottom: 6px; }
+    .tvoverlaybe-widget .tvo-toggles .btn { flex: 1; }
+    .tvoverlaybe-widget .tvo-range { display: grid; grid-template-columns: 58px 1fr 34px; align-items: center; gap: 6px; margin: 2px 0; font-weight: normal; font-size: 11px; }
+    .tvoverlaybe-widget .tvo-range input { margin: 0; }
+    .tvoverlaybe-widget .tvo-range em { font-style: normal; text-align: right; opacity: .8; }
+    .tvoverlaybe-widget.tvo-offline .tvo-send, .tvoverlaybe-widget.tvo-offline .tvo-section { opacity: .55; }
+  </style>
+
+  <script>
+    (function () {
+      const widget = document.querySelector('.eqLogic[data-eqLogic_uid="#uid#"]')
+      if (widget === null) { return }
+      /* Identifiants et valeurs passent par des attributs data : échappés
+         en HTML côté serveur, ils ne peuvent rien injecter dans ce script. */
+      const ids = JSON.parse(widget.getAttribute('data-tvo-ids') || '{}')
+      const state = JSON.parse(widget.getAttribute('data-tvo-state') || '{}')
+      const $ = function (_role) { return widget.querySelector('[data-role="' + _role + '"]') }
+
+      function exec(_cmd, _value, _done) {
+        if (!ids[_cmd]) { return }
+        jeedom.cmd.execute({
+          id: ids[_cmd], value: _value || {},
+          success: function () { if (typeof _done === 'function') { _done(true) } },
+          error: function (_error) {
+            jeedomUtils.showAlert({ message: (_error && _error.message) ? _error.message : '{{La TV ne répond pas}}', level: 'danger' })
+            if (typeof _done === 'function') { _done(false) }
+          }
+        })
+      }
+
+      function pill(_role, _on, _textOn, _textOff) {
+        const el = $(_role)
+        el.classList.toggle('on', _on)
+        el.classList.toggle('off', !_on)
+        el.querySelector('span').textContent = _on ? _textOn : _textOff
+      }
+
+      function render() {
+        const online = String(state.online) === '1'
+        widget.classList.toggle('tvo-offline', !online)
+        pill('online', online, '{{TvOverlay en ligne}}', '{{TvOverlay hors ligne}}')
+        pill('screen', online && String(state.screen) === '1', '{{Écran allumé}}', '{{Écran éteint}}')
+
+        const chips = $('chips')
+        chips.innerHTML = ''
+        const list = String(state.fixed_list || '').split(',').map(function (_s) { return _s.trim() }).filter(function (_s) { return _s !== '' })
+        if (list.length === 0) {
+          const empty = document.createElement('span')
+          empty.className = 'tvo-empty'
+          empty.textContent = '{{Aucun}}'
+          chips.appendChild(empty)
+        }
+        list.forEach(function (_id) {
+          const chip = document.createElement('span')
+          chip.className = 'tvo-chip'
+          chip.appendChild(document.createTextNode(_id))
+          const remove = document.createElement('button')
+          remove.type = 'button'
+          remove.title = '{{Retirer}}'
+          remove.innerHTML = '<i class="fas fa-times"></i>'
+          remove.addEventListener('click', function () { exec('fixed_remove', { title: '', message: _id }) })
+          chip.appendChild(remove)
+          chips.appendChild(chip)
+        })
+        $('clear').style.visibility = list.length > 0 ? 'visible' : 'hidden'
+
+        const notif = String(state.notifications) === '1'
+        const fixed = String(state.fixed) === '1'
+        $('notif-toggle').className = 'btn btn-xs ' + (notif ? 'btn-success' : 'btn-default')
+        $('fixed-toggle').className = 'btn btn-xs ' + (fixed ? 'btn-success' : 'btn-default')
+        ;['clock', 'background'].forEach(function (_key) {
+          const input = $(_key)
+          if (document.activeElement !== input && state[_key] !== '') { input.value = state[_key] }
+          $(_key + '-val').textContent = (state[_key] === '' ? '-' : state[_key] + ' %')
+        })
+      }
+
+      $('form').addEventListener('submit', function (_event) {
+        _event.preventDefault()
+        const title = $('title').value.trim()
+        const message = $('message').value.trim()
+        if (title === '' && message === '') {
+          $('title').focus()
+          return
+        }
+        const send = $('send')
+        send.disabled = true
+        exec('notify', { title: title, message: message }, function (_ok) {
+          send.disabled = false
+          if (_ok) {
+            $('title').value = ''
+            $('message').value = ''
+            jeedomUtils.showAlert({ message: '{{Notification envoyée}}', level: 'success' })
+          }
+        })
+      })
+      $('clear').addEventListener('click', function () { exec('fixed_clear') })
+      $('notif-toggle').addEventListener('click', function () { exec(String(state.notifications) === '1' ? 'notifications_off' : 'notifications_on') })
+      $('fixed-toggle').addEventListener('click', function () { exec(String(state.fixed) === '1' ? 'fixed_off' : 'fixed_on') })
+      ;['clock', 'background'].forEach(function (_key) {
+        const input = $(_key)
+        input.addEventListener('input', function () { $(_key + '-val').textContent = input.value + ' %' })
+        input.addEventListener('change', function () { exec(_key + '_set', { slider: input.value }) })
+      })
+      if (ids.refresh) {
+        widget.querySelector('.refresh').addEventListener('click', function () { exec('refresh') })
+      } else {
+        widget.querySelector('.refresh').remove()
+      }
+
+      /* Mise à jour en direct : chaque info suivie redessine le widget. */
+      ;['online', 'screen', 'fixed_list', 'notifications', 'fixed', 'clock', 'background'].forEach(function (_key) {
+        if (!ids[_key]) { return }
+        /* L'uid rend chaque fonction distincte : le coeur ignore une
+           fonction dont le texte est déjà enregistré, et un widget redessiné
+           ne recevrait plus rien. Un widget retiré de la page se tait. */
+        jeedom.cmd.addUpdateFunction(ids[_key], function (_options) {
+          if (document.querySelector('.eqLogic[data-eqLogic_uid="#uid#"]') === null) { return }
+          state[_key] = (_options.value === null || _options.value === undefined) ? '' : String(_options.value)
+          render()
+        })
+      })
+      render()
+    })()
+  </script>
+</div>
