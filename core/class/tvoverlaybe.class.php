@@ -675,9 +675,10 @@ class tvoverlaybe extends eqLogic {
             return $replace;
         }
         $version = jeedom::versionAlias($_version);
-        if ($this->getDisplay('width', 'auto') === 'auto') {
-            $replace['#width#'] = '300px';
-        }
+        /* Taille fixée par le contenu : une taille retenue par le dashboard
+         * pour l'ancien widget couperait le formulaire. */
+        $replace['#width#'] = '300px';
+        $replace['#height#'] = 'auto';
         $ids = array();
         $state = array();
         foreach (array_merge(self::WIDGET_INFOS, self::WIDGET_ACTIONS) as $logicalId) {
