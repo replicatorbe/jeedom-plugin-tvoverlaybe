@@ -43,6 +43,7 @@
     .tvoverlaybe-widget .tvo-pill.on { background: rgba(76, 175, 80, .18); color: #43a047; }
     .tvoverlaybe-widget .tvo-pill.off { background: rgba(127, 127, 127, .15); opacity: .8; }
     .tvoverlaybe-widget .tvo-pill .fa-circle { font-size: 7px; }
+    .tvoverlaybe-widget .tvo-pill.sleep { background: rgba(255, 160, 0, .18); color: #fb8c00; opacity: 1; }
     .tvoverlaybe-widget .tvo-send { display: flex; flex-direction: column; gap: 5px; margin: 0; }
     .tvoverlaybe-widget .tvo-send textarea { resize: vertical; min-height: 44px; }
     .tvoverlaybe-widget .tvo-send button { align-self: stretch; }
@@ -99,7 +100,12 @@
       function render() {
         const online = val('online') === '1'
         widget.classList.toggle('tvo-offline', !online)
-        pill('online', online, '{{TvOverlay en ligne}}', '{{TvOverlay hors ligne}}')
+        /* TvOverlay répond aussi TV en veille : Android garde le réseau et
+         * l'appli. La pastille le dit plutôt que « en ligne ». */
+        const asleep = online && val('screen') === '0'
+        pill('online', online && !asleep, '{{TvOverlay en ligne}}', online ? '{{TV en veille}}' : '{{TvOverlay hors ligne}}')
+        $('online').classList.toggle('sleep', asleep)
+        $('online').querySelector('i').className = asleep ? 'fas fa-moon' : 'fas fa-circle'
         pill('screen', online && val('screen') === '1', '{{Écran allumé}}', '{{Écran éteint}}')
 
         const chips = $('chips')
