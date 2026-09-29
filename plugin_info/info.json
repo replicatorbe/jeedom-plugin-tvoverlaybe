@@ -1,7 +1,7 @@
 {
     "id": "tvoverlaybe",
     "name": "TvOverlay",
-    "pluginVersion": "0.2.0",
+    "pluginVersion": "0.2.1",
     "description": {
         "fr_FR": "Affiche les notifications de Jeedom sur les téléviseurs Android TV et Google TV, par-dessus l'image et sans interrompre ce qui passe, grâce à l'appli TvOverlay installée sur la TV. Notifications avec titre, message, icônes, image ou flux vidéo d'une caméra (RTSP), retirables par leur identifiant ; indicateurs fixes dans un coin de l'écran (météo, lampe allumée, alarme) ; réglage de l'horloge, du fond, de la durée et de l'activation des notifications. Associé au plugin Google TV, il fait relancer TvOverlay quand Android l'a arrêtée, puis envoie la notification.",
         "en_US": "Shows Jeedom notifications on Android TV and Google TV sets, on top of the picture and without interrupting what is playing, through the TvOverlay app installed on the TV. Notifications with title, message, icons, image or a camera video stream (RTSP), removable by their identifier; fixed indicators in a corner of the screen (weather, light on, alarm); control of the clock, background, duration and whether notifications are shown. Paired with the Google TV plugin, it has TvOverlay relaunched when Android has stopped it, then sends the notification."

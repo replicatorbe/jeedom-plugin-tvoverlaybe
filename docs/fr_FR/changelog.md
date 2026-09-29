@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+- « Notifier (JSON) » et « Indicateur (JSON) » acceptent un message reçu en
+  objet. Enregistrer une règle ou un scénario depuis l'interface de Jeedom
+  change tout texte qui commence par « { » en objet : l'ordre échouait alors
+  sur « Le message doit être un objet JSON ». Les `#id#` de commande y sont
+  remplacés comme dans un texte.
+
 ## 0.2.0
 
 - Indicateurs automatiques : onglet de l'équipement (clé `auto_fixed`),

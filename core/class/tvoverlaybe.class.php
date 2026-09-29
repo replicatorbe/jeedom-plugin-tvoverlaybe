@@ -479,7 +479,20 @@ class tvoverlaybe extends eqLogic {
     /* ============================================================= ORDRES */
 
     public static function jsonMessage($_options) {
-        $text = trim((string) (isset($_options['message']) ? $_options['message'] : ''));
+        $message = isset($_options['message']) ? $_options['message'] : '';
+        /* Un formulaire du coeur enregistré depuis l'interface (règle dahua,
+         * scénario…) change toute valeur qui commence par « { » en objet :
+         * getJeeValues() la passe à JSON.parse. Le message arrive alors en
+         * tableau, et (string) en faisait « Array » — l'ordre échouait. Il est
+         * réencodé, et ses #id# de commande remplacés comme dans un texte : le
+         * moteur de scénario ne les remplace que dans les chaînes. */
+        if (is_array($message)) {
+            $message = json_encode($message, JSON_UNESCAPED_UNICODE);
+            if (class_exists('cmd') && method_exists('cmd', 'cmdToValue')) {
+                $message = cmd::cmdToValue($message);
+            }
+        }
+        $text = trim((string) $message);
         $data = json_decode($text, true);
         if (!is_array($data)) {
             throw new Exception(__('Le message doit être un objet JSON, par exemple', __FILE__) . ' {"title":"Sonnette","smallIcon":"mdi:bell"}');

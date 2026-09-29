@@ -330,6 +330,20 @@ check('indicateur de scénario : liste', $tv->infoValue('fixed_list'), 'alarme, 
 $tv->runAction('fixed_remove', array('message' => 'alarme'));
 check('indicateur de scénario : aucun état automatique', array_keys($tv->getCache('auto_state')), array('meteo'));
 
+/* Un message JSON reçu en OBJET : c'est ce que produit un formulaire du coeur
+ * enregistré depuis l'interface (getJeeValues passe à JSON.parse toute valeur
+ * qui commence par « { »). Il doit être accepté comme le texte. */
+check('message objet : décodé', tvoverlaybe::jsonMessage(array('message' => array('title' => 'Intrusion', 'duration' => 30))),
+      array('title' => 'Intrusion', 'duration' => 30));
+check('message texte : décodé', tvoverlaybe::jsonMessage(array('message' => '{"title":"Intrusion"}')), array('title' => 'Intrusion'));
+$refus = false;
+try { tvoverlaybe::jsonMessage(array('message' => 'pas du JSON')); } catch (Exception $e) { $refus = true; }
+check('message non JSON : refusé', $refus, true);
+$tv->runAction('fixed_json', array('message' => array('id' => 'porte', 'icon' => 'mdi:door')));
+$tv->autoSync('cron');
+$tv->takeSent();
+check('indicateur reçu en objet : posé', in_array('porte', array_map('trim', explode(',', $tv->infoValue('fixed_list')))), true);
+
 /* TV sans adresse, ou désactivée : aucun calcul. */
 $off = new tvoverlaybeFake();
 $off->setConfiguration('auto_fixed', array($meteo));
