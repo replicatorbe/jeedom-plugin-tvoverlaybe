@@ -207,6 +207,100 @@ function tvoverlaybeChoose(_entries) {
   })
 }
 
+/* ================================================ INDICATEURS AUTOMATIQUES */
+
+function tvoverlaybeMarkModified() {
+  if (typeof jeeFrontEnd !== 'undefined') { jeeFrontEnd.modifyWithoutSave = true }
+  window.modifyWithoutSave = true
+}
+
+/* Les champs qui n'ont de sens que pour un choix (« Visible si… », texte
+   issu d'une commande…) : data-if="clé=valeur". Cachés, ils gardent leur
+   valeur : repasser en « Fixe » puis revenir ne fait rien perdre. */
+function tvoverlaybeAutoToggle(_panel) {
+  _panel.querySelectorAll('.tvoAutoIf').forEach(function (_el) {
+    var rule = _el.getAttribute('data-if').split('=')
+    var field = _panel.querySelector('.tvoAutoAttr[data-key="' + rule[0] + '"]')
+    _el.style.display = (field !== null && field.value === rule[1]) ? '' : 'none'
+  })
+}
+
+function tvoverlaybeAutoAddCond(_panel, _condition) {
+  var template = tvoverlaybeEl('tpl_tvoverlaybeAutoCond')
+  var body = _panel.querySelector('.tvoAutoConds tbody')
+  if (template === null || body === null) { return }
+  var row = template.content.firstElementChild.cloneNode(true)
+  var condition = _condition || {}
+  row.querySelectorAll('.tvoCondAttr').forEach(function (_field) {
+    var key = _field.getAttribute('data-key')
+    if (isset(condition[key]) && condition[key] !== null) { _field.value = condition[key] }
+  })
+  body.appendChild(row)
+}
+
+function tvoverlaybeAutoAdd(_indicator) {
+  var template = tvoverlaybeEl('tpl_tvoverlaybeAuto')
+  var root = tvoverlaybeEl('div_tvoverlaybeAuto')
+  if (template === null || root === null) { return }
+  var panel = template.content.firstElementChild.cloneNode(true)
+  var indicator = _indicator || {}
+  panel.querySelectorAll('.tvoAutoAttr').forEach(function (_field) {
+    var key = _field.getAttribute('data-key')
+    if (_field.type === 'checkbox') {
+      _field.checked = !isset(indicator[key]) || String(indicator[key]) !== '0'
+    } else if (isset(indicator[key]) && indicator[key] !== null) {
+      _field.value = indicator[key]
+    }
+  })
+  var conditions = Array.isArray(indicator.conditions) ? indicator.conditions : []
+  conditions.forEach(function (_c) { tvoverlaybeAutoAddCond(panel, _c) })
+  root.appendChild(panel)
+  tvoverlaybeAutoToggle(panel)
+  return panel
+}
+
+function tvoverlaybeAutoRead() {
+  var list = []
+  document.querySelectorAll('#div_tvoverlaybeAuto .tvoAuto').forEach(function (_panel) {
+    var indicator = {}
+    _panel.querySelectorAll('.tvoAutoAttr').forEach(function (_field) {
+      indicator[_field.getAttribute('data-key')] = (_field.type === 'checkbox') ? (_field.checked ? 1 : 0) : _field.value
+    })
+    indicator.conditions = []
+    _panel.querySelectorAll('.tvoAutoCond').forEach(function (_row) {
+      var condition = {}
+      _row.querySelectorAll('.tvoCondAttr').forEach(function (_field) {
+        condition[_field.getAttribute('data-key')] = _field.value
+      })
+      /* Une ligne laissée vide n'est pas une condition. */
+      if (String(condition.cmd || '').trim() !== '') { indicator.conditions.push(condition) }
+    })
+    list.push(indicator)
+  })
+  return list
+}
+
+/* Choisir une commande info : le champ reçoit son nom lisible
+   (#[Objet][Équipement][Commande]#), que le coeur convertit en #id# à
+   l'enregistrement. */
+function tvoverlaybeAutoPick(_button) {
+  var group = _button.closest('.input-group')
+  var field = (group === null) ? null : group.querySelector('input')
+  if (field === null) { return }
+  jeedom.cmd.getSelectModal({ cmd: { type: 'info' } }, function (_result) {
+    if (!_result || !_result.human) { return }
+    field.value = _result.human
+    tvoverlaybeMarkModified()
+  })
+}
+
+/* Appelée par plugin.template.js avant l'enregistrement. */
+function saveEqLogic(_eqLogic) {
+  if (!isset(_eqLogic.configuration)) { _eqLogic.configuration = {} }
+  _eqLogic.configuration.auto_fixed = tvoverlaybeAutoRead()
+  return _eqLogic
+}
+
 /* =============================================================== ÉQUIPEMENT */
 
 function tvoverlaybeRender(_data) {
@@ -230,6 +324,11 @@ function tvoverlaybeRender(_data) {
 }
 
 function printEqLogic(_eqLogic) {
+  var root = tvoverlaybeEl('div_tvoverlaybeAuto')
+  if (root !== null) { root.innerHTML = '' }
+  var configuration = (isset(_eqLogic) && isset(_eqLogic.configuration)) ? _eqLogic.configuration : {}
+  var auto = Array.isArray(configuration.auto_fixed) ? configuration.auto_fixed : []
+  auto.forEach(function (_indicator) { tvoverlaybeAutoAdd(_indicator) })
   tvoverlaybeRender({ loading: true })
   if (isset(_eqLogic.id) && _eqLogic.id !== '') {
     var id = String(_eqLogic.id)
@@ -328,22 +427,66 @@ window.tvoverlaybeHandlers = {
         return
       }
     }
+    var el
+    if (target.closest('#bt_tvoverlaybeAutoAdd') !== null) {
+      /* Un nouvel indicateur : visible toujours, en cercle, 12 h. */
+      var panel = tvoverlaybeAutoAdd({ enable: 1, visibility: 'always', text_mode: 'none', icon_mode: 'fixed', shape: 'circle', expiration: '12h' })
+      if (panel) { panel.scrollIntoView({ block: 'nearest' }) }
+      tvoverlaybeMarkModified()
+      return
+    }
+    if ((el = target.closest('.tvoAutoRemove')) !== null) {
+      el.closest('.tvoAuto').remove()
+      tvoverlaybeMarkModified()
+      return
+    }
+    if ((el = target.closest('.tvoAutoCondAdd')) !== null) {
+      tvoverlaybeAutoAddCond(el.closest('.tvoAuto'), { operator: '==', value: '1' })
+      tvoverlaybeMarkModified()
+      return
+    }
+    if ((el = target.closest('.tvoAutoCondRemove')) !== null) {
+      el.closest('.tvoAutoCond').remove()
+      tvoverlaybeMarkModified()
+      return
+    }
+    if ((el = target.closest('.tvoAutoPick')) !== null) {
+      tvoverlaybeAutoPick(el)
+    }
   },
   change: function (_event) {
     var box = _event.target
     if (box && box.classList && box.classList.contains('tvoverlaybeFound') && window.tvoverlaybeChosen) {
       window.tvoverlaybeChosen[box.getAttribute('data-index')] = box.checked
     }
+    if (box && box.classList && (box.classList.contains('tvoAutoAttr') || box.classList.contains('tvoCondAttr'))) {
+      var panel = box.closest('.tvoAuto')
+      if (panel !== null) { tvoverlaybeAutoToggle(panel) }
+      tvoverlaybeMarkModified()
+    }
+  },
+  /* Frappe dans un champ d'indicateur : la page doit savoir qu'il y a
+     quelque chose à enregistrer, comme pour les champs du coeur. */
+  input: function (_event) {
+    var field = _event.target
+    if (field && field.classList && (field.classList.contains('tvoAutoAttr') || field.classList.contains('tvoCondAttr'))) {
+      tvoverlaybeMarkModified()
+    }
   }
 }
 
-if (!window.tvoverlaybeListening) {
-  window.tvoverlaybeListening = true
-  ;['click', 'change'].forEach(function (_type) {
-    document.addEventListener(_type, function (_event) {
-      if (window.tvoverlaybeHandlers && typeof window.tvoverlaybeHandlers[_type] === 'function') {
-        window.tvoverlaybeHandlers[_type](_event)
-      }
-    })
+/* Retenu par type d'événement : une version précédente du script, restée
+   dans l'onglet (window.tvoverlaybeListening), a déjà posé « click » et
+   « change » ; les reposer doublerait chaque clic. */
+window.tvoverlaybeListeningTypes = window.tvoverlaybeListeningTypes ||
+  (window.tvoverlaybeListening ? { click: true, change: true } : {})
+;['click', 'change', 'input'].forEach(function (_type) {
+  if (window.tvoverlaybeListeningTypes[_type]) { return }
+  window.tvoverlaybeListeningTypes[_type] = true
+  document.addEventListener(_type, function (_event) {
+    if (window.tvoverlaybeHandlers && typeof window.tvoverlaybeHandlers[_type] === 'function') {
+      window.tvoverlaybeHandlers[_type](_event)
+    }
   })
-}
+})
+window.tvoverlaybeListening = true

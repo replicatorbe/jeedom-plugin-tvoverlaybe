@@ -21,12 +21,16 @@ function tvoverlaybe_install() {
 }
 
 /* Exécutée dans la requête HTTP de la page des plugins : rien de lent ici,
- * aucune interrogation de TV. On rattrape les commandes ajoutées. */
+ * aucune interrogation de TV. On rattrape les commandes ajoutées, et
+ * l'écouteur des indicateurs automatiques (0.2.0) est reconstruit d'après la
+ * configuration existante, sans l'enregistrer ni la modifier : sans
+ * indicateur automatique, il n'y a rien à écouter et rien n'est créé. */
 function tvoverlaybe_update() {
     /* Une TV en erreur n'empêche pas la mise à jour des autres. */
     foreach (eqLogic::byType('tvoverlaybe') as $eqLogic) {
         try {
             $eqLogic->createCommands();
+            $eqLogic->updateAutoListener();
         } catch (Throwable $e) {
             log::add('tvoverlaybe', 'error', $eqLogic->getHumanName() . ' : ' . $e->getMessage());
         }

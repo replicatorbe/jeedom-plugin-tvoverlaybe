@@ -16,6 +16,9 @@
  */
 
 require_once __DIR__ . '/../../../../core/php/core.inc.php';
+/* La logique des indicateurs automatiques, à part : elle se teste hors
+ * ligne, sans le coeur. */
+require_once __DIR__ . '/tvoverlaybeAuto.class.php';
 
 /*
  * Notifications sur les téléviseurs Android TV / Google TV, par l'appli
@@ -50,6 +53,13 @@ require_once __DIR__ . '/../../../../core/php/core.inc.php';
  *
  * L'identifiant logique d'un équipement est l'identifiant de l'installation
  * de TvOverlay (status.id), stable quand l'adresse IP change.
+ *
+ * Indicateurs automatiques : décrits dans l'équipement (configuration
+ * « auto_fixed »), ils s'affichent et se retirent seuls selon des commandes
+ * info, sans scénario. Un listener suit les commandes citées ; le cron de la
+ * minute renouvelle avant expiration, rattrape une TV qui ne répondait pas,
+ * et republie quand l'écran a pu les perdre (Jeedom redémarré, TvOverlay
+ * relancée, TV rallumée). La logique est dans tvoverlaybeAuto.class.php.
  */
 class tvoverlaybe extends eqLogic {
 
@@ -130,7 +140,16 @@ class tvoverlaybe extends eqLogic {
             try {
                 $eqLogic->publishFixed();
                 if (is_array($reply) && !empty($reply['success'])) {
+                    /* Lu avant ingest(), qui les met à jour : une TvOverlay
+                     * qui répond de nouveau a été relancée, et une TV
+                     * rallumée a pu perdre ses indicateurs. */
+                    $wasOnline = $eqLogic->infoValue('online');
+                    $wasScreen = $eqLogic->infoValue('screen');
                     $eqLogic->ingest($reply['result']);
+                    if ($wasOnline !== '1' || ($wasScreen === '0' && $eqLogic->infoValue('screen') === '1')) {
+                        $eqLogic->autoLost($wasOnline !== '1' ? 'TvOverlay répond de nouveau' : 'écran rallumé');
+                    }
+                    $eqLogic->autoSync('cron');
                 } else {
                     $eqLogic->checkAndUpdateCmd('online', 0);
                 }
@@ -141,9 +160,41 @@ class tvoverlaybe extends eqLogic {
         curl_multi_close($multi);
     }
 
+    /* Démarrage de Jeedom (plugin::start()). Pendant l'arrêt, TvOverlay a pu
+     * être relancée ou la TV éteinte : les indicateurs automatiques qu'on
+     * croyait affichés deviennent « inconnus ». Aucune requête ici, le
+     * démarrage n'a pas à attendre une TV : le cron de la minute les
+     * republie. */
+    public static function start() {
+        foreach (self::byType(__CLASS__, true) as $eqLogic) {
+            try {
+                $eqLogic->autoLost('démarrage de Jeedom');
+            } catch (Throwable $e) {
+                log::add(__CLASS__, 'error', $eqLogic->getHumanName() . ' : ' . $e->getMessage());
+            }
+        }
+    }
+
+    /* Le listener : une commande citée par un indicateur automatique a
+     * changé. Lancé par le coeur dans un processus à part. */
+    public static function pull($_options) {
+        $eqLogic = self::byId(isset($_options['eqLogic_id']) ? $_options['eqLogic_id'] : 0);
+        if (!is_object($eqLogic) || $eqLogic->getEqType_name() !== __CLASS__ || $eqLogic->getIsEnable() != 1) {
+            return;
+        }
+        try {
+            $eqLogic->autoSync('event');
+        } catch (Throwable $e) {
+            log::add(__CLASS__, 'error', $eqLogic->getHumanName() . ' : ' . $e->getMessage());
+        }
+    }
+
     /* ======================================================== CYCLE DE VIE */
 
-    /* Aucune exception ici : le coeur crée l'équipement avec son seul nom. */
+    /* Aucune exception à la création : le coeur crée l'équipement avec son
+     * seul nom. Ensuite, des indicateurs automatiques mal décrits (id
+     * manquant ou en double) sont refusés avec un message clair plutôt
+     * qu'enregistrés pour ne jamais s'afficher. */
     public function preSave() {
         if ($this->getId() == '') {
             $this->setIsEnable(1);
@@ -153,10 +204,36 @@ class tvoverlaybe extends eqLogic {
         if ($this->getConfiguration('relaunch', '') === '') {
             $this->setConfiguration('relaunch', 1);
         }
+        $auto = $this->getConfiguration(self::AUTO_KEY, array());
+        /* Rien à contrôler sans indicateur : la configuration d'une TV qui
+         * n'en a pas n'est pas touchée (pas de clé ajoutée). */
+        if ($this->getId() != '' && ((is_array($auto) && count($auto) > 0) || (is_string($auto) && trim($auto) !== ''))) {
+            $errors = tvoverlaybeAuto::errors($auto);
+            if (count($errors) > 0) {
+                throw new Exception(__('Indicateurs automatiques :', __FILE__) . ' ' . implode(' ', $errors));
+            }
+            /* Rangé sous sa forme complète : la page et le moteur lisent
+             * la même chose, quel que soit le chemin d'écriture (page,
+             * API JSON-RPC). */
+            $this->setConfiguration(self::AUTO_KEY, tvoverlaybeAuto::normalizeAll($auto));
+        }
     }
 
     public function postSave() {
         $this->createCommands();
+        $this->updateAutoListener();
+        /* Un indicateur ajouté, changé ou supprimé s'affiche ou se retire
+         * tout de suite, pas à la minute suivante. Un échec (TV éteinte)
+         * n'empêche pas l'enregistrement : le cron réessaiera. */
+        try {
+            $this->autoSync('save');
+        } catch (Throwable $e) {
+            log::add(__CLASS__, 'warning', $this->getHumanName() . ' : ' . $e->getMessage());
+        }
+    }
+
+    public function preRemove() {
+        $this->removeAutoListener();
     }
 
     public function postRemove() {
@@ -503,6 +580,282 @@ class tvoverlaybe extends eqLogic {
         $this->checkAndUpdateCmd('fixed_list', implode(', ', $ids));
     }
 
+    /* ========================================= INDICATEURS AUTOMATIQUES */
+
+    /* Clé de configuration de l'équipement : la liste des indicateurs
+     * automatiques (forme décrite dans tvoverlaybeAuto::normalize()). */
+    const AUTO_KEY = 'auto_fixed';
+
+    /* Valeur d'une commande info de cet équipement, en texte ('' si
+     * absente). */
+    public function infoValue($_logicalId) {
+        $cmd = $this->getCmd('info', $_logicalId);
+        if (!is_object($cmd)) {
+            return '';
+        }
+        $value = $cmd->execCmd();
+        return ($value === null) ? '' : (string) $value;
+    }
+
+    /* Les indicateurs actifs, par id. Un id en double (écrit à la main par
+     * l'API, preSave() le refuse ailleurs) : le premier l'emporte. */
+    public function autoIndicators() {
+        $active = array();
+        foreach (tvoverlaybeAuto::normalizeAll($this->getConfiguration(self::AUTO_KEY, array())) as $indicator) {
+            if ($indicator['enable'] == 1 && $indicator['id'] !== '' && !isset($active[$indicator['id']])) {
+                $active[$indicator['id']] = $indicator;
+            }
+        }
+        return $active;
+    }
+
+    private function listenerOptions() {
+        return array('eqLogic_id' => intval($this->getId()));
+    }
+
+    private function removeAutoListener() {
+        $listener = listener::byClassAndFunction(__CLASS__, 'pull', $this->listenerOptions());
+        if (is_object($listener)) {
+            $listener->remove();
+        }
+    }
+
+    /* L'écouteur suit la liste des commandes citées : reconstruit à chaque
+     * enregistrement, il n'écoute plus une lampe qu'on a retirée. Rien à
+     * écouter (pas d'indicateur, ou tous « toujours » avec texte et icône
+     * fixes) : pas d'écouteur, le cron suffit au renouvellement. */
+    public function updateAutoListener() {
+        $ids = array();
+        if ($this->getIsEnable() == 1) {
+            foreach ($this->autoIndicators() as $indicator) {
+                $ids = array_merge($ids, tvoverlaybeAuto::cmdIds($indicator));
+            }
+        }
+        $ids = array_values(array_unique($ids));
+        if (count($ids) === 0) {
+            $this->removeAutoListener();
+            return;
+        }
+        $listener = listener::byClassAndFunction(__CLASS__, 'pull', $this->listenerOptions());
+        if (!is_object($listener)) {
+            $listener = new listener();
+            $listener->setClass(__CLASS__);
+            $listener->setFunction('pull');
+            $listener->setOption($this->listenerOptions());
+        }
+        $listener->emptyEvent();
+        foreach ($ids as $id) {
+            $listener->addEvent($id);
+        }
+        $listener->save();
+    }
+
+    /* Le listener lance un processus par événement : trois lampes allumées
+     * ensemble, ce sont trois calculs simultanés, qui liraient et écriraient
+     * le même état. Un verrou par TV les met en file : sans lui, un retrait
+     * pourrait être noté « envoyé » alors que l'envoi d'un autre processus
+     * l'a suivi à l'écran. */
+    private function autoLock() {
+        $file = jeedom::getTmpFolder(__CLASS__) . '/auto-' . intval($this->getId()) . '.lock';
+        $handle = @fopen($file, 'c');
+        if ($handle !== false) {
+            flock($handle, LOCK_EX);
+        }
+        return $handle;
+    }
+
+    private function autoUnlock($_handle) {
+        if ($_handle !== false && $_handle !== null) {
+            flock($_handle, LOCK_UN);
+            fclose($_handle);
+        }
+    }
+
+    private function autoStates() {
+        $states = $this->getCache('auto_state', array());
+        return is_array($states) ? $states : array();
+    }
+
+    /* L'écran a pu perdre les indicateurs : le prochain calcul renvoie ceux
+     * qu'on croyait affichés. */
+    public function autoLost($_why) {
+        $handle = $this->autoLock();
+        try {
+            $states = $this->autoStates();
+            if (count($states) > 0) {
+                log::add(__CLASS__, 'debug', $this->getHumanName() . ' : ' . __('indicateurs automatiques à republier', __FILE__) . ' (' . $_why . ')');
+                $this->setCache('auto_state', tvoverlaybeAuto::lost($states));
+            }
+        } finally {
+            $this->autoUnlock($handle);
+        }
+    }
+
+    /* Retrait à la main de ces id : ceux qui sont des indicateurs
+     * automatiques restent retirés tant que ce qu'ils affichent ne change
+     * pas. Le plus intuitif : « Retirer tous les indicateurs » pendant un
+     * film ne voit pas la météo revenir à la minute, mais la lampe qu'on
+     * rallume, elle, se montre de nouveau. Les autres id ne sont pas
+     * concernés. */
+    public function autoSnooze($_ids) {
+        $auto = $this->autoIndicators();
+        $ids = array_values(array_filter(array_map('strval', $_ids), function ($id) use ($auto) { return isset($auto[$id]); }));
+        if (count($ids) === 0) {
+            return;
+        }
+        $handle = $this->autoLock();
+        try {
+            $states = $this->autoStates();
+            foreach ($ids as $id) {
+                $states[$id] = tvoverlaybeAuto::snooze(isset($states[$id]) ? $states[$id] : null);
+            }
+            $this->setCache('auto_state', $states);
+        } finally {
+            $this->autoUnlock($handle);
+        }
+    }
+
+    /* Le plugin Google TV note l'heure de chaque relance de TvOverlay et de
+     * chaque allumage de la TV. Une relance faite entre deux crons (sa
+     * surveillance, ou une notification de ce plugin) ne se voit pas dans
+     * l'info « En ligne », restée à 1 : c'est ici qu'on l'apprend. */
+    private function autoCheckGoogleTv($_states) {
+        $googleTv = null;
+        try {
+            $googleTv = $this->googleTv();
+        } catch (Throwable $e) {
+        }
+        if (!is_object($googleTv)) {
+            return $_states;
+        }
+        $at = max((int) $googleTv->getCache('overlay_relaunch_at', 0), (int) $googleTv->getCache('power_on_at', 0));
+        $seen = (int) $this->getCache('auto_googletv_at', 0);
+        if ($at <= $seen) {
+            return $_states;
+        }
+        $this->setCache('auto_googletv_at', $at);
+        /* Premier passage : rien à rattraper, on prend seulement la date. */
+        if ($seen === 0) {
+            return $_states;
+        }
+        log::add(__CLASS__, 'debug', $this->getHumanName() . ' : ' . __('TvOverlay relancée ou TV rallumée : indicateurs automatiques republiés', __FILE__));
+        return tvoverlaybeAuto::lost($_states);
+    }
+
+    /*
+     * Recalcule chaque indicateur automatique et n'envoie que ce qui a
+     * changé à l'écran (voir tvoverlaybeAuto::decide()).
+     *
+     * Pas de relance de TvOverlay ici, contrairement à send() : un
+     * indicateur n'est pas une alerte, et une température qui change toutes
+     * les dix minutes ne doit pas ouvrir la fiche Play Store par-dessus un
+     * film. TvOverlay ne répond pas : on s'arrête, l'état n'est pas touché,
+     * « En ligne » passe à 0, et le cron qui la retrouvera (relancée par la
+     * surveillance du plugin Google TV, ou TV rallumée) republiera tout. La
+     * règle « jamais de relance TV en veille » est donc respectée d'office.
+     */
+    public function autoSync($_reason) {
+        if (!$this->isConfigured() || $this->getIsEnable() != 1) {
+            return;
+        }
+        $indicators = $this->autoIndicators();
+        /* Une TV sans indicateur automatique (le cas de toutes avant la
+         * 0.2.0) : ni verrou ni fichier, le cron de la minute passe. */
+        if (count($indicators) === 0 && count($this->autoStates()) === 0) {
+            return;
+        }
+        $handle = $this->autoLock();
+        try {
+            $states = $this->autoCheckGoogleTv($this->autoStates());
+            if (count($indicators) === 0 && count($states) === 0) {
+                return;
+            }
+            /* TvOverlay connue pour ne pas répondre : inutile d'attendre
+             * trois secondes par indicateur. Le cron qui la retrouvera
+             * enchaîne sur ce calcul. */
+            $down = ($this->infoValue('online') === '0');
+            $separator = (strpos((string) config::byKey('language', 'core', 'fr_FR'), 'fr') === 0) ? ',' : '.';
+            $values = array();
+            $valueOf = function ($_id) use (&$values) {
+                if (!array_key_exists($_id, $values)) {
+                    $cmd = cmd::byId($_id);
+                    $values[$_id] = (is_object($cmd) && $cmd->getType() === 'info') ? $cmd->execCmd() : null;
+                }
+                return $values[$_id];
+            };
+            $now = time();
+            foreach ($indicators as $id => $indicator) {
+                $body = tvoverlaybeAuto::body($indicator, $valueOf, $separator);
+                $decision = tvoverlaybeAuto::decide($body, isset($states[$id]) ? $states[$id] : null, $indicator['expiration'], $now);
+                if ($decision['action'] === 'none') {
+                    $states[$id] = $decision['state'];
+                    continue;
+                }
+                if ($down) {
+                    continue;
+                }
+                $fixed = ($decision['action'] === 'send')
+                    ? array_merge($body, array('expiration' => $indicator['expiration']))
+                    : array('id' => (string) $id, 'visible' => false);
+                try {
+                    $this->autoRequest($fixed, $_reason);
+                } catch (tvoverlaybeDown $e) {
+                    $down = true;
+                    continue;
+                }
+                $states[$id] = $decision['state'];
+            }
+            /* Indicateurs supprimés ou désactivés dans l'équipement : retirés
+             * de l'écran s'ils y étaient, puis oubliés. */
+            foreach (array_keys($states) as $id) {
+                if (isset($indicators[$id])) {
+                    continue;
+                }
+                $id = (string) $id;
+                if (!is_array($states[$id]) || (isset($states[$id]['shown']) && $states[$id]['shown'] === false)) {
+                    unset($states[$id]);
+                    continue;
+                }
+                if ($down) {
+                    continue;
+                }
+                try {
+                    $this->autoRequest(array('id' => $id, 'visible' => false), $_reason);
+                } catch (tvoverlaybeDown $e) {
+                    $down = true;
+                    continue;
+                }
+                unset($states[$id]);
+            }
+            $this->setCache('auto_state', $states);
+        } finally {
+            $this->autoUnlock($handle);
+        }
+    }
+
+    /* Un envoi du moteur. Un refus de TvOverlay (icône illisible…) est
+     * noté au journal et compté comme fait : réessayer chaque minute ne le
+     * ferait pas accepter, et remplirait le journal. */
+    private function autoRequest($_fixed, $_reason) {
+        try {
+            $this->request('/notify_fixed', $_fixed);
+        } catch (tvoverlaybeDown $e) {
+            log::add(__CLASS__, 'debug', $this->getHumanName() . ' : ' . __('indicateur automatique en attente, TvOverlay ne répond pas :', __FILE__) . ' ' . $_fixed['id']);
+            $this->checkAndUpdateCmd('online', 0);
+            throw $e;
+        } catch (Throwable $e) {
+            /* Refusé : il n'est pas à l'écran, il n'entre pas dans la liste
+             * des indicateurs affichés. */
+            log::add(__CLASS__, 'error', $this->getHumanName() . ' : ' . __('indicateur automatique', __FILE__) . ' ' . $_fixed['id'] . ' : ' . $e->getMessage());
+            return;
+        }
+        log::add(__CLASS__, 'debug', $this->getHumanName() . ' : ' . __('indicateur automatique', __FILE__) . ' (' . $_reason . ') ' . json_encode($_fixed, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        /* Dans la liste des indicateurs affichés, comme les autres :
+         * visible au widget, retirable d'un clic, et connu de « Retirer
+         * tous les indicateurs ». */
+        $this->rememberFixed($_fixed);
+    }
+
     /* ====================================================== NOTIFICATIONS */
 
     /* Nombre de notifications dont le contenu est retenu pour le retrait. */
@@ -616,14 +969,24 @@ class tvoverlaybe extends eqLogic {
                 $id = self::idFrom($_options);
                 $this->send('/notify_fixed', array('id' => $id, 'visible' => false));
                 $this->rememberFixed(array('id' => $id, 'visible' => false));
+                /* Un indicateur automatique retiré à la main ne revient pas
+                 * au calcul suivant : il reste retiré jusqu'à ce que ce
+                 * qu'il affiche change (voir autoSnooze()). */
+                $this->autoSnooze(array($id));
                 return;
             case 'fixed_clear':
                 /* Chaque id sort de la liste dès son retrait : un échec en
-                 * cours de route laisse une liste juste. */
+                 * cours de route laisse une liste juste. Les indicateurs
+                 * automatiques y figurent aussi (ils passent par
+                 * rememberFixed()) et sont mis en retrait comme par
+                 * « Retirer un indicateur ». */
+                $cleared = array();
                 foreach (array_keys($this->fixedIds()) as $id) {
                     $this->send('/notify_fixed', array('id' => (string) $id, 'visible' => false));
                     $this->rememberFixed(array('id' => (string) $id, 'visible' => false));
+                    $cleared[] = (string) $id;
                 }
+                $this->autoSnooze($cleared);
                 return;
             case 'notifications_on':
             case 'notifications_off':

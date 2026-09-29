@@ -93,7 +93,11 @@ if (!preg_match('/class\s+tvoverlaybeCmd\s+extends\s+cmd/', $source)) {
  * est recopiée sans son require, dont le chemin relatif ne mène au coeur que
  * depuis /var/www/html/plugins. */
 $copy = sys_get_temp_dir() . '/tvoverlaybe.check.' . getmypid() . '.php';
-file_put_contents($copy, preg_replace('#^\s*require_once .*core\.inc\.php.*$#m', '', $source));
+/* Les autres require (tvoverlaybeAuto) sont relatifs à __DIR__ : depuis la
+ * copie temporaire, ils pointeraient dans /tmp. On les ramène au dépôt. */
+$copied = preg_replace('#^\s*require_once .*core\.inc\.php.*$#m', '', $source);
+$copied = str_replace("__DIR__ . '/", var_export(realpath(dirname($file)) . '/', true) . " . '", $copied);
+file_put_contents($copy, $copied);
 $script = 'require_once ' . var_export($core, true) . ';'
         . ' register_shutdown_function(function () { $e = error_get_last();'
         . '   if ($e !== null && in_array($e["type"], array(E_ERROR, E_COMPILE_ERROR, E_CORE_ERROR, E_PARSE), true)) {'

@@ -78,6 +78,7 @@ $googleTvs = tvoverlaybe::googleTvAvailable() ? eqLogic::byType('googletvbe') : 
 		<ul class="nav nav-tabs" role="tablist">
 			<li role="presentation"><a href="#" class="eqLogicAction" aria-controls="home" role="tab" data-toggle="tab" data-action="returnToThumbnailDisplay"><i class="fas fa-arrow-circle-left"></i></a></li>
 			<li role="presentation" class="active"><a href="#eqlogictab" aria-controls="home" role="tab" data-toggle="tab"><i class="fas fa-tachometer-alt"></i><span class="hidden-xs"> {{Équipement}}</span></a></li>
+			<li role="presentation"><a href="#autotab" aria-controls="home" role="tab" data-toggle="tab"><i class="fas fa-magic"></i><span class="hidden-xs"> {{Indicateurs automatiques}}</span></a></li>
 			<li role="presentation"><a href="#helptab" aria-controls="home" role="tab" data-toggle="tab"><i class="fas fa-book"></i><span class="hidden-xs"> {{Exemples}}</span></a></li>
 			<li role="presentation"><a href="#diagtab" aria-controls="home" role="tab" data-toggle="tab"><i class="fas fa-stethoscope"></i><span class="hidden-xs"> {{Diagnostic}}</span></a></li>
 			<li role="presentation"><a href="#commandtab" aria-controls="home" role="tab" data-toggle="tab"><i class="fas fa-list"></i><span class="hidden-xs"> {{Commandes}}</span></a></li>
@@ -218,6 +219,154 @@ $googleTvs = tvoverlaybe::googleTvAvailable() ? eqLogic::byType('googletvbe') : 
 				</div>
 			</div>
 
+			<!-- =================== INDICATEURS AUTOMATIQUES ================== -->
+			<!-- Une liste, que data-l2key ne sait pas ramasser : saveEqLogic()
+			     la lit et la range dans configuration.auto_fixed. -->
+			<div role="tabpanel" class="tab-pane" id="autotab">
+				<br>
+				<div class="col-xs-12">
+					<div class="alert alert-info">
+						{{Des indicateurs qui s'affichent et se retirent seuls, sans scénario : le plugin suit les commandes choisies et n'envoie à la TV que ce qui change à l'écran. Chacun est renvoyé avant son expiration, et republié quand Jeedom redémarre, quand TvOverlay est relancée ou quand la TV se rallume.}}
+						<br>
+						{{L'id est obligatoire et unique : TvOverlay ne permet de retirer un indicateur que par son id. Un indicateur retiré à la main (« Retirer un indicateur », « Retirer tous les indicateurs », croix du widget) reste retiré jusqu'à ce que ce qu'il affiche change.}}
+					</div>
+					<a class="btn btn-success btn-sm" id="bt_tvoverlaybeAutoAdd"><i class="fas fa-plus-circle"></i> {{Ajouter un indicateur}}</a>
+					<br><br>
+					<div id="div_tvoverlaybeAuto"></div>
+				</div>
+				<!-- Modèles copiés par le JS, jamais envoyés tels quels. -->
+				<template id="tpl_tvoverlaybeAuto">
+					<div class="panel panel-default tvoAuto">
+						<div class="panel-heading">
+							<div class="form-inline">
+								<label class="checkbox-inline" title="{{Actif}}"><input type="checkbox" class="tvoAutoAttr" data-key="enable" checked> {{Actif}}</label>
+								&nbsp;
+								<input type="text" class="form-control input-sm tvoAutoAttr" data-key="id" placeholder="{{id (obligatoire), ex. meteo}}" style="width:170px;">
+								<input type="text" class="form-control input-sm tvoAutoAttr" data-key="name" placeholder="{{Nom, ex. Météo}}" style="width:220px;">
+								<a class="btn btn-danger btn-sm pull-right tvoAutoRemove" title="{{Supprimer cet indicateur}}"><i class="fas fa-minus-circle"></i></a>
+							</div>
+						</div>
+						<div class="panel-body form-horizontal">
+							<div class="form-group">
+								<label class="col-sm-2 control-label">{{Visibilité}}</label>
+								<div class="col-sm-3">
+									<select class="form-control input-sm tvoAutoAttr" data-key="visibility">
+										<option value="always">{{Toujours}}</option>
+										<option value="conditions">{{Visible si…}}</option>
+									</select>
+								</div>
+								<div class="col-sm-4 tvoAutoIf" data-if="visibility=conditions">
+									<select class="form-control input-sm tvoAutoAttr" data-key="combine">
+										<option value="any">{{au moins une condition (OU)}}</option>
+										<option value="all">{{toutes les conditions (ET)}}</option>
+									</select>
+								</div>
+							</div>
+							<div class="form-group tvoAutoIf" data-if="visibility=conditions">
+								<div class="col-sm-offset-2 col-sm-10">
+									<table class="table table-condensed tvoAutoConds" style="margin-bottom:5px;">
+										<tbody></tbody>
+									</table>
+									<a class="btn btn-default btn-xs tvoAutoCondAdd"><i class="fas fa-plus"></i> {{Ajouter une condition}}</a>
+								</div>
+							</div>
+							<div class="form-group">
+								<label class="col-sm-2 control-label">{{Texte}}</label>
+								<div class="col-sm-3">
+									<select class="form-control input-sm tvoAutoAttr" data-key="text_mode">
+										<option value="none">{{Aucun}}</option>
+										<option value="fixed">{{Fixe}}</option>
+										<option value="cmd">{{Valeur d'une commande}}</option>
+									</select>
+								</div>
+								<div class="col-sm-4 tvoAutoIf" data-if="text_mode=fixed">
+									<input type="text" class="form-control input-sm tvoAutoAttr" data-key="text" placeholder="{{Salon}}">
+								</div>
+								<div class="col-sm-4 tvoAutoIf" data-if="text_mode=cmd">
+									<div class="input-group">
+										<input type="text" class="form-control input-sm roundedLeft tvoAutoAttr" data-key="text_cmd" placeholder="#[Maison][Météo][Température]#">
+										<span class="input-group-btn"><a class="btn btn-default btn-sm roundedRight tvoAutoPick" data-target="text_cmd" title="{{Choisir une commande}}"><i class="fas fa-list-alt"></i></a></span>
+									</div>
+								</div>
+								<div class="col-sm-3 tvoAutoIf" data-if="text_mode=cmd">
+									<div class="input-group">
+										<input type="number" min="0" max="6" class="form-control input-sm roundedLeft tvoAutoAttr" data-key="decimals" placeholder="{{décimales}}" title="{{Arrondi : nombre de décimales (vide = valeur telle quelle)}}">
+										<input type="text" class="form-control input-sm roundedRight tvoAutoAttr" data-key="suffix" placeholder="{{suffixe, ex. °}}" title="{{Ajouté après la valeur}}">
+									</div>
+								</div>
+							</div>
+							<div class="form-group">
+								<label class="col-sm-2 control-label">{{Icône}}</label>
+								<div class="col-sm-3">
+									<select class="form-control input-sm tvoAutoAttr" data-key="icon_mode">
+										<option value="fixed">{{Fixe}}</option>
+										<option value="cmd">{{Valeur d'une commande}}</option>
+									</select>
+								</div>
+								<div class="col-sm-4 tvoAutoIf" data-if="icon_mode=cmd">
+									<div class="input-group">
+										<input type="text" class="form-control input-sm roundedLeft tvoAutoAttr" data-key="icon_cmd" placeholder="#[Maison][Météo][Icône]#">
+										<span class="input-group-btn"><a class="btn btn-default btn-sm roundedRight tvoAutoPick" data-target="icon_cmd" title="{{Choisir une commande}}"><i class="fas fa-list-alt"></i></a></span>
+									</div>
+								</div>
+								<div class="col-sm-3">
+									<input type="text" class="form-control input-sm tvoAutoAttr" data-key="icon" placeholder="mdi:lightbulb" title="{{Icône fixe ; avec une commande, icône de repli tant qu'elle n'a rien publié}}">
+								</div>
+							</div>
+							<div class="form-group">
+								<label class="col-sm-2 control-label">{{Couleurs}}</label>
+								<div class="col-sm-10">
+									<div class="form-inline">
+										<input type="text" class="form-control input-sm tvoAutoAttr" data-key="iconColor" placeholder="{{icône #ff9800}}" style="width:130px;">
+										<input type="text" class="form-control input-sm tvoAutoAttr" data-key="messageColor" placeholder="{{texte #ffffff}}" style="width:130px;">
+										<input type="text" class="form-control input-sm tvoAutoAttr" data-key="borderColor" placeholder="{{bordure #ff9800}}" style="width:130px;">
+										<input type="text" class="form-control input-sm tvoAutoAttr" data-key="backgroundColor" placeholder="{{fond #66000000}}" style="width:130px;">
+									</div>
+								</div>
+							</div>
+							<div class="form-group">
+								<label class="col-sm-2 control-label">{{Forme}}</label>
+								<div class="col-sm-3">
+									<select class="form-control input-sm tvoAutoAttr" data-key="shape">
+										<option value="">{{Celle de l'appli}}</option>
+										<option value="circle">{{Cercle}}</option>
+										<option value="rounded">{{Arrondie}}</option>
+										<option value="rectangular">{{Rectangle}}</option>
+									</select>
+								</div>
+								<label class="col-sm-2 control-label">{{Expiration}}</label>
+								<div class="col-sm-2">
+									<input type="text" class="form-control input-sm tvoAutoAttr" data-key="expiration" placeholder="12h">
+								</div>
+								<div class="col-sm-3"><span class="help-block" style="margin:0;">{{Renouvelée avant terme (30m, 12h, 1d…). 12h par défaut.}}</span></div>
+							</div>
+						</div>
+					</div>
+				</template>
+				<template id="tpl_tvoverlaybeAutoCond">
+					<tr class="tvoAutoCond">
+						<td>
+							<div class="input-group">
+								<input type="text" class="form-control input-sm roundedLeft tvoCondAttr" data-key="cmd" placeholder="#[Salon][Lampe][Etat]#">
+								<span class="input-group-btn"><a class="btn btn-default btn-sm roundedRight tvoAutoPick" title="{{Choisir une commande}}"><i class="fas fa-list-alt"></i></a></span>
+							</div>
+						</td>
+						<td style="width:90px;">
+							<select class="form-control input-sm tvoCondAttr" data-key="operator">
+								<option value="==">==</option>
+								<option value="!=">!=</option>
+								<option value="&gt;">&gt;</option>
+								<option value="&gt;=">&gt;=</option>
+								<option value="&lt;">&lt;</option>
+								<option value="&lt;=">&lt;=</option>
+							</select>
+						</td>
+						<td style="width:140px;"><input type="text" class="form-control input-sm tvoCondAttr" data-key="value" placeholder="1"></td>
+						<td style="width:40px;"><a class="btn btn-danger btn-sm tvoAutoCondRemove" title="{{Supprimer}}"><i class="fas fa-minus-circle"></i></a></td>
+					</tr>
+				</template>
+			</div>
+
 			<!-- =========================== EXEMPLES ========================== -->
 			<div role="tabpanel" class="tab-pane" id="helptab">
 				<br>
@@ -235,6 +384,7 @@ $googleTvs = tvoverlaybe::googleTvAvailable() ? eqLogic::byType('googletvbe') : 
 					<p>{{Champs : id, message, icon, iconColor, messageColor, borderColor, backgroundColor, shape (circle, rounded, rectangular), expiration (1h, 30m, 12h… ou secondes), visible.}}</p>
 					<pre>{"id":"meteo","icon":"mdi:weather-rainy","message":"14°","shape":"circle","expiration":"12h"}</pre>
 					<pre>{"id":"lampe","icon":"mdi:lightbulb","iconColor":"#ff9800","borderColor":"#ff9800","shape":"circle"}</pre>
+					<p>{{Un indicateur qui doit suivre des commandes (météo, lampes allumées) n'a pas besoin de scénario : onglet « Indicateurs automatiques ».}}</p>
 					<legend>{{Retirer un indicateur}}</legend>
 					<p>{{Message : l'id de l'indicateur, par exemple}} <code>lampe</code>.</p>
 				</div>
